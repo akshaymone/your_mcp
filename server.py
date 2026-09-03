@@ -1,4 +1,12 @@
 from mcp.server.mcpserver import MCPServer
+import logging
+
+logging.basicConfig(
+    filename='D:\\work_dsi\\Projects\\korea\\git\\mcp_tools\\mcp_server.log',
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.info("Starting MCP Server...")
 
 # Initialize the MCP server
 # FastMCP makes it incredibly easy to define tools by just wrapping Python functions.
