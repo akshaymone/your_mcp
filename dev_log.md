@@ -24,3 +24,5 @@
 - Added missing `docker-compose.yml` (Qdrant persistent volume on ports 6333/6334) — was missing from repo, causing server auto-start to silently fail.
 - Rewrote `README.md`: fixed one-time vs ongoing step split, added venv activation to setup, moved `pip install` to one-time setup, updated test prompts to reflect new natural-language UX (no need to specify tool names), replaced Docker reset instructions with `delete_document` tool usage examples, added first-run model download note (~1GB), added Troubleshooting table.
 
+- Fixed SSL verification error in `analyze_image`: internal FM Gateway (`fmgateway.proxem.dsone.3ds.com`) uses a self-signed/internal CA certificate. Added `verify=False` to `requests.post()` and suppressed `urllib3.InsecureRequestWarning` to prevent SSL handshake failures when calling the Vision LLM.
+

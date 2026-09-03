@@ -363,6 +363,11 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     import os
     import base64
     import requests
+    import urllib3
+
+    # The internal FM Gateway uses a self-signed / corporate CA certificate.
+    # Disable SSL verification and suppress the resulting InsecureRequestWarning.
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     api_url = os.getenv("FM_GATEWAY_URL")
     api_key = os.getenv("FM_GATEWAY_TOKEN", "")
@@ -412,7 +417,7 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     }
 
     try:
-        response = requests.post(endpoint, headers=headers, json=payload, timeout=60)
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=60, verify=False)
         response.raise_for_status()
         result = response.json()
         return result["choices"][0]["message"]["content"]
