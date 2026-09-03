@@ -21,3 +21,6 @@
 
 - Added `delete_document(doc_name_or_path, collection_name)` tool: deletes all Qdrant points for a specific document (accepts file path, filename, or bare name — resolved via Path.stem) or wipes the entire collection when passed "all" / "everything" / "*". AGENTS.md updated to handle natural language delete prompts like "delete xyz" and "delete all documents from my knowledge base".
 
+- Added missing `docker-compose.yml` (Qdrant persistent volume on ports 6333/6334) — was missing from repo, causing server auto-start to silently fail.
+- Rewrote `README.md`: fixed one-time vs ongoing step split, added venv activation to setup, moved `pip install` to one-time setup, updated test prompts to reflect new natural-language UX (no need to specify tool names), replaced Docker reset instructions with `delete_document` tool usage examples, added first-run model download note (~1GB), added Troubleshooting table.
+
