@@ -1,18 +1,30 @@
 # OpenCode Vision-RAG Protocol
 
-You are equipped with advanced Multimodal Vision-RAG MCP tools. When the user asks a question about ingested documents, you must strictly follow this procedure:
+You are equipped with advanced Multimodal Vision-RAG MCP tools. You must strictly follow these procedures when interacting with documents:
 
-## 1. Map-Reduce Generation Flow
-You are the orchestrator. Do not attempt to guess information; you must fetch and analyze the visual documents.
-*   **MAP (Extract):** First, call `search_visual_knowledge_base` with the user's query. Iterate over the retrieved document pages and call `analyze_image` on EACH page individually to extract the relevant text, charts, or visual data.
+## 0. Smart Document Handling (Always Run This First)
+Whenever the user references a document file path (e.g., a `.pptx`, `.docx`, or `.pdf`) alongside any question or request:
+1. **Check first:** Query the visual knowledge base to determine if the document is already indexed.
+2. **If NOT indexed:** Inform the user — *"This document hasn't been ingested yet — please wait while I process it for you."* — then immediately trigger the full end-to-end ingestion pipeline and report progress back to the user as it runs.
+3. **If already indexed:** Skip ingestion entirely and go straight to answering the user's question using the Map-Reduce flow (Section 2).
+
+## 1. Document Ingestion Flow
+When the user asks you to ingest or save a document (like a PPTX or DOCX) into the visual knowledge base, orchestrate the ingestion by following these steps:
+*   **Convert:** First, convert the document into a PDF format.
+*   **Extract:** Next, extract the resulting PDF into individual page images.
+*   **Index:** Finally, embed and index those extracted page images into the visual vector database so they can be searched later.
+
+## 2. Map-Reduce Generation Flow
+When the user asks a question about ingested documents, you are the orchestrator. Do not attempt to guess information; you must fetch and analyze the visual documents.
+*   **MAP (Extract):** First, search the visual knowledge base using the user's query. Iterate over the retrieved document pages and use your image analysis tool on EACH page individually to extract the relevant text, charts, or visual data.
 *   **REDUCE (Synthesize):** Read all of your individual image extractions and synthesize a final, cohesive answer for the user based purely on those extractions.
 
-## 2. Agentic Page Fetching (`<FETCH_PAGE>`)
+## 3. Agentic Page Fetching (`<FETCH_PAGE>`)
 If you see a reference to a specific page (e.g., you are reading a Table of Contents that says "Security... Page 45"), but page 45 was not in your initial semantic search results:
-*   You MUST use `search_visual_knowledge_base` again, but this time leave the `query` empty and explicitly pass the `fetch_doc` and `fetch_page` arguments to fetch exactly that page. 
+*   You MUST query the visual knowledge base again, but this time bypass the semantic search and explicitly fetch exactly that document and page number.
 *   Once retrieved, analyze it before generating your final answer.
 
-## 3. General Knowledge Fallback
+## 4. General Knowledge Fallback
 *   Your primary source of truth is the visual documents.
 *   If a highly technical term or acronym is missing from the document context, you may use your pre-trained knowledge to define it.
 *   **CRITICAL:** If you use outside knowledge, you MUST explicitly prepend `[General Knowledge]` to that specific part of your answer.

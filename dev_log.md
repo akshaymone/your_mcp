@@ -14,3 +14,8 @@
 - Re-validated against `REQUIREMENTS.md`. All dependencies and agent orchestrator rules are aligned.
 - Replaced mock placeholder in analyze_image with actual live HTTP calls to FM Gateway.
 - Removed all hardcoded model and URL fallbacks in server.py, strictly enforcing configuration via .env variables (FM_GATEWAY_URL, VLM_MODEL, VISION_RETRIEVER_MODEL).
+
+- Added `check_document_status(file_path, collection_name)` tool: lightweight Qdrant check that returns whether a document is already indexed, its derived doc_name, and page count. Ensures consistent doc_name derivation via Path.stem across all tools.
+- Added `ingest_document(file_path, collection_name)` high-level tool: wraps convert → extract → index pipeline end-to-end with step-by-step progress strings ([1/3], [2/3], [3/3]) returned to the agent.
+- Added Protocol 0 (Smart Document Handling) to AGENTS.md: agent must always call check_document_status first when a file path is mentioned, then either ingest (with user notification) or query directly.
+

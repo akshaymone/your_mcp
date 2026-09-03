@@ -265,7 +265,7 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
     
     CRITICAL INSTRUCTIONS FOR THE AGENT:
     When you call this tool, you MUST execute the following Map-Reduce flow:
-    1. MAP: Iterate over the retrieved pages and call `analyze_image` on each one to extract relevant data.
+    1. MAP: Iterate over the retrieved pages and use your visual analysis tool on each one to extract relevant data.
     2. REDUCE: Read all your extractions and synthesize the final answer.
     3. FALLBACK: If a technical term is undefined in the visual context, use your pre-trained knowledge but label it explicitly as [General Knowledge].
     
@@ -421,6 +421,128 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
         if getattr(e, 'response', None) is not None:
             err_msg += f"\nResponse Body: {e.response.text}"
         return err_msg
+
+
+@mcp.tool()
+def check_document_status(file_path: str, collection_name: str = "vision_pages") -> str:
+    """
+    Checks whether a given document has already been indexed in the visual knowledge base.
+
+    IMPORTANT: Call this tool FIRST whenever the user references a document file path alongside
+    any question or request. Use the result to decide whether to ingest first or query directly.
+
+    Args:
+        file_path: Absolute path to the document file (e.g., C:\\path\\to\\report.pptx).
+        collection_name: The Qdrant collection to check (default: 'vision_pages').
+
+    Returns:
+        JSON string with 'status' of "indexed" (includes page_count) or "not_indexed", plus the
+        derived doc_name that will be used for all subsequent ingestion and retrieval operations.
+    """
+    import json
+    from qdrant_client import QdrantClient
+    from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+
+    doc_name = Path(file_path).stem
+    qdrant_host = os.getenv("QDRANT_HOST", "127.0.0.1")
+    qdrant_port = os.getenv("QDRANT_PORT", "6333")
+
+    try:
+        qdrant = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=5.0)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Could not connect to Qdrant: {e}"})
+
+    if not qdrant.collection_exists(collection_name):
+        return json.dumps({"status": "not_indexed", "doc_name": doc_name, "reason": "collection does not exist yet"})
+
+    # Check for page_1 as a reliable proxy for whether the document is indexed
+    point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{doc_name}_page_1"))
+    existing = qdrant.retrieve(collection_name=collection_name, ids=[point_id], with_payload=False)
+
+    if existing:
+        # Count total pages indexed for this document
+        scroll_result, _ = qdrant.scroll(
+            collection_name=collection_name,
+            scroll_filter=Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))]),
+            limit=1000,
+            with_payload=False,
+            with_vectors=False,
+        )
+        page_count = len(scroll_result)
+        return json.dumps({
+            "status": "indexed",
+            "doc_name": doc_name,
+            "page_count": page_count,
+            "collection": collection_name,
+        })
+    else:
+        return json.dumps({
+            "status": "not_indexed",
+            "doc_name": doc_name,
+            "collection": collection_name,
+        })
+
+
+@mcp.tool()
+def ingest_document(file_path: str, collection_name: str = "vision_pages") -> str:
+    """
+    High-level end-to-end ingestion tool. Converts a document to PDF, extracts pages as images,
+    and indexes them into the visual knowledge base using ColPali embeddings.
+
+    Use this tool when check_document_status reports 'not_indexed'. Before calling this tool,
+    tell the user: "This document hasn't been ingested yet — please wait while I process it."
+
+    Args:
+        file_path: Absolute path to the document (.pptx, .docx, or .pdf).
+        collection_name: Target Qdrant collection (default: 'vision_pages').
+
+    Returns:
+        A step-by-step progress log and final status confirming the document is ready to query.
+    """
+    import json
+    import tempfile
+
+    progress = []
+    file_path = str(Path(file_path).resolve())
+    doc_name = Path(file_path).stem
+    ext = Path(file_path).suffix.lower()
+
+    # ── Step 1: Convert to PDF ────────────────────────────────────────────────
+    if ext in (".docx", ".pptx"):
+        progress.append(f"[1/3] Converting '{Path(file_path).name}' to PDF...")
+        temp_pdf_dir = tempfile.mkdtemp(prefix="ingest_pdf_")
+        pdf_path = convert_office_to_pdf(file_path, temp_pdf_dir)
+        if pdf_path.startswith("Error"):
+            return "\n".join(progress) + f"\n❌ Conversion failed: {pdf_path}"
+        progress.append(f"[1/3] ✅ PDF saved to: {pdf_path}")
+    elif ext == ".pdf":
+        pdf_path = file_path
+        progress.append(f"[1/3] ✅ File is already a PDF — skipping conversion.")
+    else:
+        return f"❌ Unsupported file type '{ext}'. Supported formats: .pptx, .docx, .pdf"
+
+    # ── Step 2: Extract pages as images ──────────────────────────────────────
+    progress.append(f"[2/3] Extracting individual pages from PDF...")
+    extract_result = extract_pdf_pages(pdf_path)
+    if extract_result.startswith("Error"):
+        return "\n".join(progress) + f"\n❌ Page extraction failed: {extract_result}"
+
+    extract_data = json.loads(extract_result)
+    image_paths = extract_data["images"]
+    progress.append(f"[2/3] ✅ Extracted {len(image_paths)} pages.")
+
+    # ── Step 3: Embed and index into Qdrant ───────────────────────────────────
+    progress.append(
+        f"[3/3] Embedding and indexing {len(image_paths)} pages into '{collection_name}' "
+        f"(this may take a few minutes while the visual model processes the images)..."
+    )
+    index_result = index_images_to_qdrant(image_paths, collection_name, doc_name)
+    if index_result.startswith("Error"):
+        return "\n".join(progress) + f"\n❌ Indexing failed: {index_result}"
+
+    progress.append(f"[3/3] ✅ {index_result}")
+    progress.append(f"\n✅ '{doc_name}' is now fully indexed and ready to query!")
+    return "\n".join(progress)
 
 
 if __name__ == "__main__":
