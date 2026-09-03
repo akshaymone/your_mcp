@@ -256,9 +256,10 @@ def index_images_to_qdrant(image_paths: list[str], collection_name: str, doc_nam
 
 
 @mcp.tool()
-def search_visual_knowledge_base(query: str, collection_name: str, limit: int = 5) -> str:
+def search_visual_knowledge_base(query: str = "", collection_name: str = "vision_pages", limit: int = 5, fetch_doc: str = None, fetch_page: int = None) -> str:
     """
     Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and base64 payloads.
+    It also supports exact-match fetching if fetch_doc and fetch_page are provided (used for <FETCH_PAGE> behavior).
     
     CRITICAL INSTRUCTIONS FOR THE AGENT:
     When you call this tool, you MUST execute the following Map-Reduce flow:
@@ -267,15 +268,18 @@ def search_visual_knowledge_base(query: str, collection_name: str, limit: int = 
     3. FALLBACK: If a technical term is undefined in the visual context, use your pre-trained knowledge but label it explicitly as [General Knowledge].
     
     Args:
-        query: The search text.
+        query: The search text (leave empty if using fetch_doc/fetch_page).
         collection_name: The Qdrant collection to search.
-        limit: Max number of pages to return.
+        limit: Max number of pages to return for semantic search.
+        fetch_doc: Optional document name to fetch exactly.
+        fetch_page: Optional page number to fetch exactly.
         
     Returns:
         JSON string containing search results (doc_name, page_number, base64 data).
     """
     import json
     import torch
+    import uuid
     from colpali_engine.models import ColIdefics3, ColIdefics3Processor
     from qdrant_client import QdrantClient
     
@@ -291,32 +295,48 @@ def search_visual_knowledge_base(query: str, collection_name: str, limit: int = 
         return f"Error: Collection '{collection_name}' does not exist."
         
     try:
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_name = "vidore/colSmol-500M"
-        
-        processor = ColIdefics3Processor.from_pretrained(model_name)
-        model = ColIdefics3.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map=device)
-        model.eval()
-        
-        inputs = processor.process_queries([query]).to(device)
-        with torch.no_grad():
-            embeddings = model(**inputs)
-            query_vector = embeddings[0].cpu().float().numpy().tolist()
-            
-        results = qdrant.query_points(
-            collection_name=collection_name,
-            query=query_vector,
-            limit=limit
-        )
-        
         out = []
-        for r in results.points:
-            out.append({
-                "score": r.score,
-                "doc_name": r.payload.get("doc_name"),
-                "page_number": r.payload.get("page_number"),
-                "image_base64": r.payload.get("image_base64")[:100] + "...(truncated for display)" # Do not dump huge base64 in tool output
-            })
+        
+        if fetch_doc and fetch_page:
+            # Exact match fetching
+            point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{fetch_doc}_page_{fetch_page}"))
+            results = qdrant.retrieve(collection_name=collection_name, ids=[point_id])
+            for r in results:
+                out.append({
+                    "score": 1.0,
+                    "doc_name": r.payload.get("doc_name"),
+                    "page_number": r.payload.get("page_number"),
+                    "image_base64": r.payload.get("image_base64")[:100] + "...(truncated for display)"
+                })
+        elif query:
+            # Semantic Search
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            model_name = "vidore/colSmol-500M"
+            
+            processor = ColIdefics3Processor.from_pretrained(model_name)
+            model = ColIdefics3.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map=device)
+            model.eval()
+            
+            inputs = processor.process_queries([query]).to(device)
+            with torch.no_grad():
+                embeddings = model(**inputs)
+                query_vector = embeddings[0].cpu().float().numpy().tolist()
+                
+            results = qdrant.query_points(
+                collection_name=collection_name,
+                query=query_vector,
+                limit=limit
+            )
+            
+            for r in results.points:
+                out.append({
+                    "score": r.score,
+                    "doc_name": r.payload.get("doc_name"),
+                    "page_number": r.payload.get("page_number"),
+                    "image_base64": r.payload.get("image_base64")[:100] + "...(truncated for display)"
+                })
+        else:
+            return "Error: Must provide either a search 'query' or both 'fetch_doc' and 'fetch_page'."
             
         return json.dumps({"query": query, "results": out})
         
