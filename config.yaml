@@ -1,0 +1,5 @@
+# Default Settings for MCP Vision-RAG Server
+default_collection: "vision_pages"
+vision_retriever_model: "vidore/colSmol-500M"
+extraction_batch_size: 5
+max_search_limit: 15

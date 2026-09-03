@@ -1,1 +1,11 @@
+fastmcp
 mcp
+python-dotenv
+pywin32
+pdf2image
+qdrant-client
+torch
+pillow
+colpali-engine>=0.3.13
+requests
+pyyaml
