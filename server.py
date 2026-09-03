@@ -213,7 +213,9 @@ def index_images_to_qdrant(image_paths: list[str], collection_name: str, doc_nam
     try:
         # Load ColPali locally
         device = "cuda" if torch.cuda.is_available() else "cpu"
-        model_name = "vidore/colSmol-500M"
+        model_name = os.getenv("VISION_RETRIEVER_MODEL")
+        if not model_name:
+            return "Error: VISION_RETRIEVER_MODEL must be configured in the .env file."
         
         processor = ColIdefics3Processor.from_pretrained(model_name)
         model = ColIdefics3.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map=device)
@@ -311,7 +313,9 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
         elif query:
             # Semantic Search
             device = "cuda" if torch.cuda.is_available() else "cpu"
-            model_name = "vidore/colSmol-500M"
+            model_name = os.getenv("VISION_RETRIEVER_MODEL")
+            if not model_name:
+                return "Error: VISION_RETRIEVER_MODEL must be configured in the .env file."
             
             processor = ColIdefics3Processor.from_pretrained(model_name)
             model = ColIdefics3.from_pretrained(model_name, torch_dtype=torch.bfloat16, device_map=device)
@@ -360,9 +364,12 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     import base64
     import requests
 
-    api_url = os.getenv("FM_GATEWAY_URL", "https://fmgateway.proxem.dsone.3ds.com")
+    api_url = os.getenv("FM_GATEWAY_URL")
     api_key = os.getenv("FM_GATEWAY_TOKEN", "")
-    model_name = os.getenv("VLM_MODEL", "google/gemma-4-31B-it")
+    model_name = os.getenv("VLM_MODEL")
+    
+    if not api_url or not model_name:
+        return "Error: FM_GATEWAY_URL and VLM_MODEL must be configured in the .env file."
     
     # Ensure it ends with /chat/completions for the OpenAI-compatible endpoint
     if api_url.endswith("/v1"):
