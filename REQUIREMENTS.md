@@ -45,8 +45,11 @@ Configurations will be tiered to separate secrets, preferences, and state:
     *   Every ingested page will store `file_path`, `file_hash` (MD5), and `last_modified` in its payload.
     *   Before ingestion, the system checks `is_document_indexed`. Unchanged files are skipped; modified files are purged and re-ingested.
 
-## 6. Generation Strategy (Agent-Side)
-Because the tools are atomic, the `opencode-cli` agent is responsible for the Map-Reduce flow:
-1.  **Map:** Agent searches Qdrant, retrieves top N pages, and calls `analyze_image` (Gemma) on each to extract data.
-2.  **Reduce:** Agent reads all extractions in its own context window (Qwen, 256K limit) and synthesizes the final answer.
-3.  **Fallback:** If a technical term is undefined in the visual context, the agent is instructed to use its pre-trained knowledge but must label it explicitly as `[General Knowledge]`.
+## 6. Generation Strategy & Agent Prompting
+Because the tools are atomic, the `opencode-cli` agent is responsible for orchestrating the Map-Reduce flow. To ensure the agent strictly follows this procedure, we will use a multi-layered prompting strategy:
+
+1.  **Workspace Rules (`AGENTS.md`):** A persistent `AGENTS.md` file will be placed in the project root alongside `opencode.js`. This file acts as an Antigravity customization rule, automatically injecting detailed behavioral instructions into the agent's context. It will explicitly define:
+    *   **Map:** Agent searches Qdrant, retrieves top N pages, and calls `analyze_image` (Gemma) on each to extract data.
+    *   **Reduce:** Agent reads all extractions in its own context window (Qwen, 256K limit) and synthesizes the final answer.
+    *   **Fallback:** If a technical term is undefined in the visual context, the agent is instructed to use its pre-trained knowledge but must label it explicitly as `[General Knowledge]`.
+2.  **MCP Tool Descriptions:** The `search_visual_knowledge_base` tool's docstring will also reinforce this Map-Reduce instruction, ensuring compatibility and compliance even if the tools are accessed via a different MCP client.
