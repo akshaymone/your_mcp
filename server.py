@@ -9,7 +9,7 @@ import requests
 from pathlib import Path
 from io import BytesIO
 
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 from dotenv import load_dotenv
 
 # Load environment variables from .env
@@ -22,7 +22,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Initialize MCP Server
-mcp = FastMCP("OpenCode-MCP-Extensions")
+mcp = MCPServer("OpenCode-MCP-Extensions")
 
 # ── Infrastructure Pre-reqs ───────────────────────────────────────────────────
 
