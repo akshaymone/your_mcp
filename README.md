@@ -1,14 +1,17 @@
-# AskMe MCP Server
+# OpenCode CLI MCP Extensions
 
-This is a local MCP (Model Context Protocol) server designed to be plugged into `opencode-cli` to provide custom data ingestion and Q&A capabilities.
+This repository contains a local MCP (Model Context Protocol) server designed to extend the capabilities of the `opencode-cli` running on your local machine.
+
+Currently, it contains the following capabilities (with more to be added in the future):
+- **Ask-Me (Knowledge Base)**: Tools to ingest data and ask questions.
 
 ## Setup Instructions (Windows)
 
 1. Ensure you have **Python 3.10+** installed on your Windows machine.
 2. Open Windows PowerShell or Command Prompt.
-3. Navigate to the folder where you cloned/copied this repository:
+3. Navigate to the folder where you cloned this repository:
    ```powershell
-   cd path\to\mcp_tools
+   cd path\to\your_mcp
    ```
 4. Create a virtual environment:
    ```powershell
@@ -27,15 +30,15 @@ This is a local MCP (Model Context Protocol) server designed to be plugged into 
 
 To connect your CLI to this local server, you need to update your `opencode.json` file (typically located in your `user_profile/opencode/runtime` folder).
 
-Add the following to the `"mcpServers"` block. **Make sure to replace `C:\\path\\to\\mcp_tools` with the actual absolute path where you placed this folder on your laptop.**
+Add the following to the `"mcpServers"` block. **Make sure to replace `C:\\path\\to\\your_mcp` with the actual absolute path where you cloned this repo on your laptop.**
 
 ```json
 {
   "mcpServers": {
-    "ask-me-local": {
-      "command": "C:\\path\\to\\mcp_tools\\.venv\\Scripts\\python.exe",
+    "opencode-local-extensions": {
+      "command": "C:\\path\\to\\your_mcp\\.venv\\Scripts\\python.exe",
       "args": [
-        "C:\\path\\to\\mcp_tools\\server.py"
+        "C:\\path\\to\\your_mcp\\server.py"
       ]
     }
   }
@@ -44,6 +47,5 @@ Add the following to the `"mcpServers"` block. **Make sure to replace `C:\\path\
 
 ## Testing it
 
-Once configured, restart your `opencode-cli` on Windows. You can then test it by asking the agent:
-1. *"Use the ask-me tool to ingest this sentence: 'The project codename is Apollo'."*
-2. *"Ask the ask-me tool what the project codename is."*
+Once configured, restart your `opencode-cli` on Windows. You can then test it by asking the agent to use the new tools, for example:
+- *"Use the ingest_data tool to save this information..."*

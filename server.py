@@ -2,7 +2,7 @@ from mcp.server.fastmcp import FastMCP
 
 # Initialize the MCP server
 # FastMCP makes it incredibly easy to define tools by just wrapping Python functions.
-mcp = FastMCP("AskMe")
+mcp = FastMCP("OpenCode-MCP-Extensions")
 
 # We can store some basic in-memory state for now until we discuss the database
 # This is just a placeholder for our actual data store.
