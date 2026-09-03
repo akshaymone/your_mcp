@@ -19,3 +19,5 @@
 - Added `ingest_document(file_path, collection_name)` high-level tool: wraps convert → extract → index pipeline end-to-end with step-by-step progress strings ([1/3], [2/3], [3/3]) returned to the agent.
 - Added Protocol 0 (Smart Document Handling) to AGENTS.md: agent must always call check_document_status first when a file path is mentioned, then either ingest (with user notification) or query directly.
 
+- Added `delete_document(doc_name_or_path, collection_name)` tool: deletes all Qdrant points for a specific document (accepts file path, filename, or bare name — resolved via Path.stem) or wipes the entire collection when passed "all" / "everything" / "*". AGENTS.md updated to handle natural language delete prompts like "delete xyz" and "delete all documents from my knowledge base".
+

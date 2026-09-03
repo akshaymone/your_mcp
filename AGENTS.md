@@ -8,6 +8,8 @@ Whenever the user references a document file path (e.g., a `.pptx`, `.docx`, or 
 2. **If NOT indexed:** Inform the user — *"This document hasn't been ingested yet — please wait while I process it for you."* — then immediately trigger the full end-to-end ingestion pipeline and report progress back to the user as it runs.
 3. **If already indexed:** Skip ingestion entirely and go straight to answering the user's question using the Map-Reduce flow (Section 2).
 
+When the user asks to **delete a document** (e.g., *"delete report from my knowledge base"*, *"remove presentation.pptx"*) or to **clear everything** (e.g., *"delete all documents from my knowledge base"*, *"wipe the knowledge base"*), use the document deletion tool. It accepts a file path, filename, plain doc name, or the keyword `all`/`everything` to wipe the entire collection.
+
 ## 1. Document Ingestion Flow
 When the user asks you to ingest or save a document (like a PPTX or DOCX) into the visual knowledge base, orchestrate the ingestion by following these steps:
 *   **Convert:** First, convert the document into a PDF format.

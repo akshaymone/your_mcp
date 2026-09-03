@@ -424,6 +424,83 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
 
 
 @mcp.tool()
+def delete_document(doc_name_or_path: str, collection_name: str = "vision_pages") -> str:
+    """
+    Deletes a specific document — or ALL documents — from the visual knowledge base.
+
+    Use this when the user says things like:
+      - "delete report from my knowledge base"
+      - "remove presentation.pptx from the knowledge base"
+      - "delete all documents from my local knowledge base"
+      - "wipe / clear the knowledge base"
+
+    Args:
+        doc_name_or_path: The document to delete. Accepts:
+            - A plain doc name:  "report"
+            - A filename:        "report.pptx"
+            - A full file path:  "C:\\path\\to\\report.pptx"
+            - The keyword "all", "*", or "everything" to wipe ALL documents.
+        collection_name: Target Qdrant collection (default: 'vision_pages').
+
+    Returns:
+        Confirmation message with the count of deleted pages, or an error description.
+    """
+    from qdrant_client import QdrantClient
+    from qdrant_client.http.models import Filter, FieldCondition, MatchValue
+
+    qdrant_host = os.getenv("QDRANT_HOST", "127.0.0.1")
+    qdrant_port = os.getenv("QDRANT_PORT", "6333")
+
+    try:
+        qdrant = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=10.0)
+    except Exception as e:
+        return f"Error: Could not connect to Qdrant: {e}"
+
+    if not qdrant.collection_exists(collection_name):
+        return f"Collection '{collection_name}' does not exist. Nothing to delete."
+
+    # ── Delete ALL documents ──────────────────────────────────────────────────
+    if doc_name_or_path.strip().lower() in ("all", "*", "everything"):
+        # Count total points before wiping
+        collection_info = qdrant.get_collection(collection_name)
+        total = collection_info.points_count
+        qdrant.delete_collection(collection_name)
+        return (
+            f"✅ Cleared entire knowledge base: deleted all {total} page(s) "
+            f"and removed collection '{collection_name}'. "
+            f"It will be recreated automatically on the next ingestion."
+        )
+
+    # ── Delete a specific document ────────────────────────────────────────────
+    # Derive doc_name from path, filename, or bare name — always via Path.stem
+    doc_name = Path(doc_name_or_path.strip()).stem
+
+    # Count pages for this doc before deleting
+    scroll_result, _ = qdrant.scroll(
+        collection_name=collection_name,
+        scroll_filter=Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))]),
+        limit=1000,
+        with_payload=False,
+        with_vectors=False,
+    )
+
+    if not scroll_result:
+        return (
+            f"No document named '{doc_name}' found in collection '{collection_name}'. "
+            f"Nothing was deleted."
+        )
+
+    page_count = len(scroll_result)
+
+    qdrant.delete(
+        collection_name=collection_name,
+        points_selector=Filter(must=[FieldCondition(key="doc_name", match=MatchValue(value=doc_name))]),
+    )
+
+    return f"✅ Deleted '{doc_name}' ({page_count} page(s)) from collection '{collection_name}'."
+
+
+@mcp.tool()
 def check_document_status(file_path: str, collection_name: str = "vision_pages") -> str:
     """
     Checks whether a given document has already been indexed in the visual knowledge base.
