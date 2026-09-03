@@ -46,6 +46,7 @@ def ask_question(query: str) -> str:
     return f"This is a placeholder answer for the query: '{query}'.\nWe currently have data from: {sources}.\n\n(Real retrieval and synthesis will be implemented soon!)"
 
 if __name__ == "__main__":
-    # Run the server using stdio transport (perfect for local CLI usage)
-    # When deployed to a central server, this can be switched to run via SSE.
-    mcp.run()
+    # Run the server using SSE transport (HTTP) so we can debug via browser
+    # and bypass any stdio issues with the CLI.
+    logging.info("Starting MCP Server on http://127.0.0.1:8000/sse")
+    mcp.run(transport="sse", port=8000)
