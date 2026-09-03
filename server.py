@@ -622,5 +622,91 @@ def ingest_document(file_path: str, collection_name: str = "vision_pages") -> st
     return "\n".join(progress)
 
 
+@mcp.tool()
+def list_ingested_documents(collection_name: str = "vision_pages") -> str:
+    """
+    Lists all documents currently indexed in the visual knowledge base, along with
+    their page counts and the collection they belong to.
+
+    Use this when the user asks things like:
+      - "what documents are in my knowledge base?"
+      - "what have you already ingested?"
+      - "show me all indexed documents"
+      - "list everything in the knowledge base"
+
+    Args:
+        collection_name: The Qdrant collection to inspect (default: 'vision_pages').
+
+    Returns:
+        A JSON string with a list of documents, each containing doc_name, page_count,
+        and collection_name. Returns an appropriate message if the collection is empty
+        or does not exist.
+    """
+    import json
+    from qdrant_client import QdrantClient
+
+    qdrant_host = os.getenv("QDRANT_HOST", "127.0.0.1")
+    qdrant_port = os.getenv("QDRANT_PORT", "6333")
+
+    try:
+        qdrant = QdrantClient(host=qdrant_host, port=qdrant_port, timeout=10.0)
+    except Exception as e:
+        return json.dumps({"error": f"Could not connect to Qdrant: {e}"})
+
+    if not qdrant.collection_exists(collection_name):
+        return json.dumps({
+            "collection": collection_name,
+            "documents": [],
+            "message": f"Collection '{collection_name}' does not exist yet. No documents have been ingested."
+        })
+
+    try:
+        # Scroll through all points and aggregate by doc_name
+        all_points = []
+        offset = None
+
+        while True:
+            batch, next_offset = qdrant.scroll(
+                collection_name=collection_name,
+                limit=250,
+                offset=offset,
+                with_payload=["doc_name"],
+                with_vectors=False,
+            )
+            all_points.extend(batch)
+            if next_offset is None:
+                break
+            offset = next_offset
+
+        if not all_points:
+            return json.dumps({
+                "collection": collection_name,
+                "documents": [],
+                "message": "The knowledge base is empty — no documents have been ingested yet."
+            })
+
+        # Aggregate page counts per document
+        doc_counts: dict[str, int] = {}
+        for point in all_points:
+            name = point.payload.get("doc_name", "unknown")
+            doc_counts[name] = doc_counts.get(name, 0) + 1
+
+        documents = [
+            {"doc_name": name, "page_count": count, "collection": collection_name}
+            for name, count in sorted(doc_counts.items())
+        ]
+
+        return json.dumps({
+            "collection": collection_name,
+            "total_documents": len(documents),
+            "total_pages": sum(d["page_count"] for d in documents),
+            "documents": documents
+        })
+
+    except Exception as e:
+        return json.dumps({"error": f"Error listing documents: {e}"})
+
+
 if __name__ == "__main__":
     mcp.run(transport="sse", port=8000)
+
