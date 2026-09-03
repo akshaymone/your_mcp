@@ -1,8 +1,8 @@
-from mcp.server.fastmcp import FastMCP
+from mcp.server.mcpserver import MCPServer
 
 # Initialize the MCP server
 # FastMCP makes it incredibly easy to define tools by just wrapping Python functions.
-mcp = FastMCP("OpenCode-MCP-Extensions")
+mcp = MCPServer("OpenCode-MCP-Extensions")
 
 # We can store some basic in-memory state for now until we discuss the database
 # This is just a placeholder for our actual data store.
