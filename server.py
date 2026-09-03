@@ -356,9 +356,63 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     Returns:
         The extracted text or analysis from the Vision LLM.
     """
-    # This is a placeholder for the actual Gemma API call that would happen here
-    # Since we are keeping it offline, it would query the local inference server
-    return f"Simulated Vision Analysis for prompt: '{prompt}'.\n(Connect this to Gemma/local VLM API)"
+    import os
+    import base64
+    import requests
+
+    api_url = os.getenv("DEVASSISTANT_API_URL", "http://internal-devassistant.local/api")
+    api_key = os.getenv("LLM_API_KEY", "")
+    
+    # Ensure it ends with /chat/completions for the OpenAI-compatible endpoint
+    if api_url.endswith("/v1"):
+        endpoint = f"{api_url}/chat/completions"
+    elif api_url.endswith("/"):
+        endpoint = f"{api_url}chat/completions"
+    else:
+        endpoint = f"{api_url}/chat/completions"
+
+    # Handle local file paths vs base64 strings
+    if os.path.exists(image_path_or_base64):
+        with open(image_path_or_base64, "rb") as f:
+            base64_img = base64.b64encode(f.read()).decode("utf-8")
+    else:
+        base64_img = image_path_or_base64
+
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    payload = {
+        "model": "openai/gpt-oss-120b",  # Default DevAssistant model
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/jpeg;base64,{base64_img}"
+                        }
+                    }
+                ]
+            }
+        ],
+        "max_tokens": 1500
+    }
+
+    try:
+        response = requests.post(endpoint, headers=headers, json=payload, timeout=60)
+        response.raise_for_status()
+        result = response.json()
+        return result["choices"][0]["message"]["content"]
+    except requests.exceptions.RequestException as e:
+        err_msg = f"API Error: {e}"
+        if getattr(e, 'response', None) is not None:
+            err_msg += f"\nResponse Body: {e.response.text}"
+        return err_msg
 
 
 if __name__ == "__main__":
