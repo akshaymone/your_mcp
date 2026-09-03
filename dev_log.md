@@ -12,3 +12,5 @@
 - Added `fetch_doc` and `fetch_page` support to `search_visual_knowledge_base` to support exact `<FETCH_PAGE>` requirements.
 - Configured `.env` and `config.yaml` for tool parameterization and secret management.
 - Re-validated against `REQUIREMENTS.md`. All dependencies and agent orchestrator rules are aligned.
+- Replaced mock placeholder in analyze_image with actual live HTTP calls to FM Gateway.
+- Removed all hardcoded model and URL fallbacks in server.py, strictly enforcing configuration via .env variables (FM_GATEWAY_URL, VLM_MODEL, VISION_RETRIEVER_MODEL).

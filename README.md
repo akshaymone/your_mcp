@@ -27,7 +27,10 @@ This repository contains a local MCP (Model Context Protocol) server designed to
    ```env
    QDRANT_HOST=127.0.0.1
    QDRANT_PORT=6333
-   LLM_API_KEY=your_api_key_here
+   FM_GATEWAY_URL=https://fmgateway.proxem.dsone.3ds.com
+   FM_GATEWAY_TOKEN=your_auth_token_here
+   VLM_MODEL=google/gemma-4-31B-it
+   VISION_RETRIEVER_MODEL=vidore/colSmol-500M
    ```
 8. Update your `opencode-cli` configuration file (e.g., `opencode.json` or `mcp_config.json`) to point to the remote server:
    ```json
