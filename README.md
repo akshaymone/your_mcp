@@ -1,51 +1,72 @@
 # OpenCode CLI MCP Extensions
 
-This repository contains a local MCP (Model Context Protocol) server designed to extend the capabilities of the `opencode-cli` running on your local machine.
+This repository contains a local MCP (Model Context Protocol) server designed to extend the capabilities of the `opencode-cli` running on your local machine using a Multimodal Vision-RAG architecture.
 
-Currently, it contains the following capabilities (with more to be added in the future):
-- **Ask-Me (Knowledge Base)**: Tools to ingest data and ask questions.
+## One-Time Setup Steps
 
-## Setup Instructions (Windows)
-
-1. Ensure you have **Python 3.10+** installed on your Windows machine.
-2. Open Windows PowerShell or Command Prompt.
-3. Navigate to the folder where you cloned this repository:
-   ```powershell
-   cd path\to\your_mcp
+1. Install **Docker Desktop** and ensure it is running.
+2. Install **Microsoft Office** (Word and PowerPoint) on your machine.
+3. Download **Poppler** binaries, extract them (e.g., to `C:\poppler`), and add `C:\poppler\bin` to your system `PATH` environment variable.
+4. Clone or pull the repository and open your terminal in the `mcp_tools` directory:
+   ```bash
+   git pull origin main
    ```
-4. Create a virtual environment:
-   ```powershell
+5. Create a virtual environment:
+   ```bash
    python -m venv .venv
    ```
-5. Activate the virtual environment:
-   ```powershell
-   .venv\Scripts\activate
+6. Copy the environment variables template:
+   ```bash
+   # Windows Command Prompt
+   copy .env.example .env
+   
+   # Mac/Linux/PowerShell
+   cp .env.example .env
    ```
-6. Install the required dependencies:
-   ```powershell
+7. Open `.env` and set the following variables:
+   ```env
+   QDRANT_HOST=127.0.0.1
+   QDRANT_PORT=6333
+   LLM_API_KEY=your_api_key_here
+   ```
+8. Update your `opencode-cli` configuration file (e.g., `opencode.json` or `mcp_config.json`) to point to the remote server:
+   ```json
+   {
+     "mcpServers": {
+       "OpenCode-Vision-RAG": {
+         "type": "remote",
+         "url": "http://127.0.0.1:8000/sse"
+       }
+     }
+   }
+   ```
+
+## Ongoing Steps (Running & Testing)
+
+1. Open your terminal in the `mcp_tools` directory.
+2. Activate the virtual environment:
+   ```bash
+   # Windows
+   .venv\Scripts\activate
+   
+   # Mac/Linux
+   source .venv/bin/activate
+   ```
+3. Install or update dependencies:
+   ```bash
    pip install -r requirements.txt
    ```
-
-## Configuring opencode-cli
-
-To connect your CLI to this local server, you need to update your `opencode.json` file (typically located in your `user_profile/opencode/runtime` folder).
-
-Add the following to the `"mcpServers"` block. **Make sure to replace `C:\\path\\to\\your_mcp` with the actual absolute path where you cloned this repo on your laptop.**
-
-```json
-{
-  "mcpServers": {
-    "opencode-local-extensions": {
-      "command": "C:\\path\\to\\your_mcp\\.venv\\Scripts\\python.exe",
-      "args": [
-        "C:\\path\\to\\your_mcp\\server.py"
-      ]
-    }
-  }
-}
-```
-
-## Testing it
-
-Once configured, restart your `opencode-cli` on Windows. You can then test it by asking the agent to use the new tools, for example:
-- *"Use the ingest_data tool to save this information..."*
+4. Start the MCP server:
+   ```bash
+   python server.py
+   ```
+5. Leave the server running. Open a new terminal window and start your `opencode-cli`.
+6. **Test Ingestion Flow** by asking the agent:
+   > "I have a presentation at C:\path\to\your\presentation.pptx. Please ingest it into the visual knowledge base."
+7. **Test Query Flow** by asking the agent:
+   > "Based on the document we just ingested, what does the flowchart on the architecture page describe?"
+8. *(Optional)* To clear all ingested data and start from scratch, run:
+   ```bash
+   docker compose down -v
+   docker compose up -d
+   ```
