@@ -360,8 +360,9 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     import base64
     import requests
 
-    api_url = os.getenv("DEVASSISTANT_API_URL", "http://internal-devassistant.local/api")
-    api_key = os.getenv("LLM_API_KEY", "")
+    api_url = os.getenv("FM_GATEWAY_URL", "https://fmgateway.proxem.dsone.3ds.com")
+    api_key = os.getenv("FM_GATEWAY_TOKEN", "")
+    model_name = os.getenv("VLM_MODEL", "google/gemma-4-31B-it")
     
     # Ensure it ends with /chat/completions for the OpenAI-compatible endpoint
     if api_url.endswith("/v1"):
@@ -385,7 +386,7 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
         headers["Authorization"] = f"Bearer {api_key}"
 
     payload = {
-        "model": "openai/gpt-oss-120b",  # Default DevAssistant model
+        "model": model_name,
         "messages": [
             {
                 "role": "user",
