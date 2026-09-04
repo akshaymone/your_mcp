@@ -1,2 +1,5 @@
 .venv/
 .env
+mcp_error.log
+mcp_server.log
+AGENTS.md
