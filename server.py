@@ -260,13 +260,14 @@ def index_images_to_qdrant(image_paths: list[str], collection_name: str, doc_nam
 @mcp.tool()
 def search_visual_knowledge_base(query: str = "", collection_name: str = "vision_pages", limit: int = 5, fetch_doc: str = None, fetch_page: int = None) -> str:
     """
-    Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and full base64 images.
+    Embeds a text query using ColPali, searches Qdrant, and returns matching page metadata.
     It also supports exact-match fetching if fetch_doc and fetch_page are provided (used for <FETCH_PAGE> behavior).
     
     CRITICAL INSTRUCTIONS FOR THE AGENT:
     When you call this tool, you MUST execute the following Map-Reduce flow:
-    1. MAP: Iterate over the retrieved pages. For each result, call analyze_image using the
-       returned 'image_base64' field directly — it contains the full image data.
+    1. MAP: Iterate over the retrieved pages. For each result:
+       - If 'file_path' is non-null → call analyze_image(file_path, prompt). This is the fast path.
+       - If 'file_path' is null (legacy doc) → call analyze_image(image_base64, prompt) instead.
     2. REDUCE: Read all your extractions and synthesize the final answer.
     3. FALLBACK: If a technical term is undefined in the visual context, use your pre-trained knowledge but label it explicitly as [General Knowledge].
     
@@ -278,8 +279,9 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
         fetch_page: Optional page number to fetch exactly.
         
     Returns:
-        JSON string containing search results with doc_name, page_number, score, and image_base64.
-        Pass 'image_base64' directly to analyze_image for full visual analysis.
+        JSON string containing search results with doc_name, page_number, score,
+        and either 'file_path' (preferred, pass directly to analyze_image) or
+        'image_base64' as fallback for legacy documents indexed before this fix.
     """
     import json
     import torch
@@ -306,12 +308,16 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
             point_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"{fetch_doc}_page_{fetch_page}"))
             results = qdrant.retrieve(collection_name=collection_name, ids=[point_id])
             for r in results:
+                file_path = r.payload.get("file_path")
                 out.append({
                     "score": 1.0,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    # Full base64 is returned — pass directly to analyze_image.
-                    "image_base64": r.payload.get("image_base64", ""),
+                    # Prefer stable file_path (pass directly to analyze_image).
+                    # Falls back to full base64 only when file_path is absent
+                    # (docs indexed before this fix).
+                    "file_path": file_path if file_path and os.path.exists(file_path) else None,
+                    "image_base64": None if (file_path and os.path.exists(file_path)) else r.payload.get("image_base64", ""),
                 })
         elif query:
             # Semantic Search
@@ -336,12 +342,16 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
             )
             
             for r in results.points:
+                file_path = r.payload.get("file_path")
                 out.append({
                     "score": r.score,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    # Full base64 is returned — pass directly to analyze_image.
-                    "image_base64": r.payload.get("image_base64", ""),
+                    # Prefer stable file_path (pass directly to analyze_image).
+                    # Falls back to full base64 only when file_path is absent
+                    # (docs indexed before this fix).
+                    "file_path": file_path if file_path and os.path.exists(file_path) else None,
+                    "image_base64": None if (file_path and os.path.exists(file_path)) else r.payload.get("image_base64", ""),
                 })
         else:
             return "Error: Must provide either a search 'query' or both 'fetch_doc' and 'fetch_page'."
@@ -850,11 +860,109 @@ def list_ingested_documents(collection_name: str = "vision_pages") -> str:
             "total_pages": sum(d["page_count"] for d in documents),
             "documents": documents
         })
-
     except Exception as e:
         return json.dumps({"error": f"Error listing documents: {e}"})
 
 
+@mcp.tool()
+def launch_ingestion(ask_me_dir: str, doc_name: str = None) -> str:
+    """
+    Launches 'ask-me ingest' as a fire-and-forget background subprocess.
+    Returns immediately — no MCP timeout risk regardless of document size.
+
+    Use this instead of ingest_document for any document ingestion.
+    After calling this tool, monitor progress using poll_ingestion_status().
+
+    Workflow:
+        1. Call launch_ingestion(ask_me_dir='/path/to/ask-me') — returns immediately.
+        2. Tell the user: "Ingestion started in the background. I'll monitor progress."
+        3. Poll poll_ingestion_status(doc_name) every 30s until status == 'done' or 'error'.
+        4. Once done, proceed to query with search_visual_knowledge_base.
+
+    Args:
+        ask_me_dir: Absolute path to the ask-me project directory (contains pyproject.toml).
+        doc_name: Optional document name for the user-facing message. Does not affect the process.
+
+    Returns:
+        Confirmation that the background process was launched, with its PID.
+    """
+    import subprocess
+    import sys
+
+    ask_me_path = Path(ask_me_dir).resolve()
+    if not ask_me_path.exists():
+        return f"Error: ask-me directory not found at '{ask_me_dir}'."
+
+    python = sys.executable
+
+    try:
+        proc = subprocess.Popen(
+            [python, "-m", "ask_me.main", "ingest"],
+            cwd=str(ask_me_path),
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            # Detach fully from the MCP server process so it keeps running after return
+            start_new_session=True,
+        )
+        msg = (
+            f"✅ ask-me ingestion launched as background process (PID {proc.pid}). "
+            f"{'Document: ' + doc_name + '.' if doc_name else ''} "
+            f"Use poll_ingestion_status(doc_name) to monitor progress."
+        )
+        logger.info(msg)
+        return msg
+    except Exception as e:
+        err = f"Error launching ask-me: {e}"
+        logger.error(err)
+        return err
+
+
+@mcp.tool()
+def poll_ingestion_status(doc_name: str) -> str:
+    """
+    Reads the status file written by ask-me during ingestion and returns current progress.
+
+    Call this every 30 seconds after launch_ingestion() until status is 'done' or 'error'.
+
+    Status values:
+        - 'running'  → still in progress; pages_done shows how many pages are embedded so far.
+        - 'done'     → ingestion complete; document is ready to query.
+        - 'error'    → ingestion failed; 'error' field contains the reason.
+        - 'not_found'→ no status file exists yet (process hasn't started or doc_name is wrong).
+
+    Args:
+        doc_name: The document stem name (e.g. 'report' for 'report.pptx').
+
+    Returns:
+        JSON string with status, pages_done, pages_total, finished_at, and error fields.
+    """
+    import json
+
+    status_dir = Path(os.path.expanduser("~")) / ".ask_me_store" / "status"
+    # Also check STATUS_DIR from env if set
+    env_status_dir = os.getenv("STATUS_DIR")
+    if env_status_dir:
+        status_dir = Path(env_status_dir)
+
+    status_file = status_dir / f"{doc_name}.json"
+
+    if not status_file.exists():
+        return json.dumps({
+            "doc_name": doc_name,
+            "status": "not_found",
+            "message": (
+                f"No status file found for '{doc_name}'. "
+                f"Either the ingestion hasn't started yet or the doc_name is incorrect. "
+                f"Expected file: {status_file}"
+            )
+        })
+
+    try:
+        data = json.loads(status_file.read_text(encoding="utf-8"))
+        return json.dumps(data, indent=2)
+    except Exception as e:
+        return json.dumps({"error": f"Could not read status file: {e}"})
+
+
 if __name__ == "__main__":
     mcp.run(transport="sse", port=8000)
-
