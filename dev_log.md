@@ -26,6 +26,7 @@
 
 - Fixed SSL verification error in `analyze_image`: internal FM Gateway (`fmgateway.proxem.dsone.3ds.com`) uses a self-signed/internal CA certificate. Added `verify=False` to `requests.post()` and suppressed `urllib3.InsecureRequestWarning` to prevent SSL handshake failures when calling the Vision LLM.
 
+- Fixed `AGENTS.md` reset-on-startup issue: opencode was wiping the file because it was being placed in the `runtime\` directory which opencode owns and re-initialises. The correct global location is `%USERPROFILE%\.config\opencode\AGENTS.md`. Updated `run_server.bat` to auto-sync the project `AGENTS.md` to the correct global config directory on every MCP server start, keeping them in sync without manual intervention.
 
 ## [2026-09-04]
 - **Bug Fix — Broken analyze_image pipeline (truncated base64):** `search_visual_knowledge_base` was returning `image_base64` truncated to 100 chars + `"...(truncated for display)"` for context efficiency. However, the agent was then passing this corrupted string directly to `analyze_image`, which caused the VLM to receive invalid image data. Fixed by replacing `image_base64` in search results with `file_path` (the on-disk JPEG path written during ingestion) and renaming the truncated field to `image_base64_preview` to make its display-only intent explicit. `analyze_image` already handles local file paths via `os.path.exists()`, so this requires no changes to the VLM call. Updated `search_visual_knowledge_base` docstring to instruct the agent to use `file_path`, not `image_base64_preview`.
