@@ -23,7 +23,7 @@ When the user asks you to ingest or save a document (like a PPTX or DOCX) into t
 
 ## 2. Map-Reduce Generation Flow
 When the user asks a question about ingested documents, you are the orchestrator. Do not attempt to guess information; you must fetch and analyze the visual documents.
-*   **MAP (Extract):** First, search the visual knowledge base using the user's query. Iterate over the retrieved document pages and use your image analysis tool on EACH page individually to extract the relevant text, charts, or visual data.
+*   **MAP (Extract):** First, search the visual knowledge base using the user's query. Iterate over the retrieved document pages and use your image analysis tool on EACH page individually — pass the `image_base64` field returned by the search tool directly to `analyze_image` to extract the relevant text, charts, or visual data.
 *   **REDUCE (Synthesize):** Read all of your individual image extractions and synthesize a final, cohesive answer for the user based purely on those extractions.
 
 ## 3. Agentic Page Fetching (`<FETCH_PAGE>`)

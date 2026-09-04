@@ -260,13 +260,13 @@ def index_images_to_qdrant(image_paths: list[str], collection_name: str, doc_nam
 @mcp.tool()
 def search_visual_knowledge_base(query: str = "", collection_name: str = "vision_pages", limit: int = 5, fetch_doc: str = None, fetch_page: int = None) -> str:
     """
-    Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and file paths.
+    Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and full base64 images.
     It also supports exact-match fetching if fetch_doc and fetch_page are provided (used for <FETCH_PAGE> behavior).
     
     CRITICAL INSTRUCTIONS FOR THE AGENT:
     When you call this tool, you MUST execute the following Map-Reduce flow:
     1. MAP: Iterate over the retrieved pages. For each result, call analyze_image using the
-       returned 'file_path' field (NOT 'image_base64_preview', which is truncated for display only).
+       returned 'image_base64' field directly — it contains the full image data.
     2. REDUCE: Read all your extractions and synthesize the final answer.
     3. FALLBACK: If a technical term is undefined in the visual context, use your pre-trained knowledge but label it explicitly as [General Knowledge].
     
@@ -278,8 +278,8 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
         fetch_page: Optional page number to fetch exactly.
         
     Returns:
-        JSON string containing search results with doc_name, page_number, and file_path.
-        Use 'file_path' with analyze_image to get the full visual analysis.
+        JSON string containing search results with doc_name, page_number, score, and image_base64.
+        Pass 'image_base64' directly to analyze_image for full visual analysis.
     """
     import json
     import torch
@@ -310,10 +310,8 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
                     "score": 1.0,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    # file_path is the on-disk JPEG extracted during ingestion.
-                    # Pass this to analyze_image instead of the truncated base64.
-                    "file_path": r.payload.get("file_path"),
-                    "image_base64_preview": r.payload.get("image_base64", "")[:100] + "...(full image: use file_path with analyze_image)"
+                    # Full base64 is returned — pass directly to analyze_image.
+                    "image_base64": r.payload.get("image_base64", ""),
                 })
         elif query:
             # Semantic Search
@@ -342,10 +340,8 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
                     "score": r.score,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    # file_path is the on-disk JPEG extracted during ingestion.
-                    # Pass this to analyze_image instead of the truncated base64.
-                    "file_path": r.payload.get("file_path"),
-                    "image_base64_preview": r.payload.get("image_base64", "")[:100] + "...(full image: use file_path with analyze_image)"
+                    # Full base64 is returned — pass directly to analyze_image.
+                    "image_base64": r.payload.get("image_base64", ""),
                 })
         else:
             return "Error: Must provide either a search 'query' or both 'fetch_doc' and 'fetch_page'."
