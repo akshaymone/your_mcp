@@ -3,7 +3,6 @@ mcp
 python-dotenv
 pywin32
 pdf2image
-pypdf
 qdrant-client
 torch
 pillow
