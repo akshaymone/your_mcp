@@ -260,12 +260,13 @@ def index_images_to_qdrant(image_paths: list[str], collection_name: str, doc_nam
 @mcp.tool()
 def search_visual_knowledge_base(query: str = "", collection_name: str = "vision_pages", limit: int = 5, fetch_doc: str = None, fetch_page: int = None) -> str:
     """
-    Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and base64 payloads.
+    Embeds a text query using ColPali, searches Qdrant, and returns matching image metadata and file paths.
     It also supports exact-match fetching if fetch_doc and fetch_page are provided (used for <FETCH_PAGE> behavior).
     
     CRITICAL INSTRUCTIONS FOR THE AGENT:
     When you call this tool, you MUST execute the following Map-Reduce flow:
-    1. MAP: Iterate over the retrieved pages and use your visual analysis tool on each one to extract relevant data.
+    1. MAP: Iterate over the retrieved pages. For each result, call analyze_image using the
+       returned 'file_path' field (NOT 'image_base64_preview', which is truncated for display only).
     2. REDUCE: Read all your extractions and synthesize the final answer.
     3. FALLBACK: If a technical term is undefined in the visual context, use your pre-trained knowledge but label it explicitly as [General Knowledge].
     
@@ -277,7 +278,8 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
         fetch_page: Optional page number to fetch exactly.
         
     Returns:
-        JSON string containing search results (doc_name, page_number, base64 data).
+        JSON string containing search results with doc_name, page_number, and file_path.
+        Use 'file_path' with analyze_image to get the full visual analysis.
     """
     import json
     import torch
@@ -308,7 +310,10 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
                     "score": 1.0,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    "image_base64": r.payload.get("image_base64")[:100] + "...(truncated for display)"
+                    # file_path is the on-disk JPEG extracted during ingestion.
+                    # Pass this to analyze_image instead of the truncated base64.
+                    "file_path": r.payload.get("file_path"),
+                    "image_base64_preview": r.payload.get("image_base64", "")[:100] + "...(full image: use file_path with analyze_image)"
                 })
         elif query:
             # Semantic Search
@@ -337,7 +342,10 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
                     "score": r.score,
                     "doc_name": r.payload.get("doc_name"),
                     "page_number": r.payload.get("page_number"),
-                    "image_base64": r.payload.get("image_base64")[:100] + "...(truncated for display)"
+                    # file_path is the on-disk JPEG extracted during ingestion.
+                    # Pass this to analyze_image instead of the truncated base64.
+                    "file_path": r.payload.get("file_path"),
+                    "image_base64_preview": r.payload.get("image_base64", "")[:100] + "...(full image: use file_path with analyze_image)"
                 })
         else:
             return "Error: Must provide either a search 'query' or both 'fetch_doc' and 'fetch_page'."
@@ -376,20 +384,37 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     if not api_url or not model_name:
         return "Error: FM_GATEWAY_URL and VLM_MODEL must be configured in the .env file."
     
-    # Ensure it ends with /chat/completions for the OpenAI-compatible endpoint
-    if api_url.endswith("/v1"):
-        endpoint = f"{api_url}/chat/completions"
-    elif api_url.endswith("/"):
-        endpoint = f"{api_url}chat/completions"
-    else:
-        endpoint = f"{api_url}/chat/completions"
+    # Normalize URL: strip trailing slashes and any existing /v1 suffix,
+    # then always append /v1/chat/completions for the OpenAI-compatible endpoint.
+    base_url = api_url.rstrip("/")
+    if base_url.endswith("/v1"):
+        base_url = base_url[:-3]  # strip /v1 so we always add it cleanly below
+    endpoint = f"{base_url}/v1/chat/completions"
+    logger.info(f"analyze_image: calling endpoint={endpoint} model={model_name}")
 
     # Handle local file paths vs base64 strings
     if os.path.exists(image_path_or_base64):
-        with open(image_path_or_base64, "rb") as f:
-            base64_img = base64.b64encode(f.read()).decode("utf-8")
+        logger.info(f"analyze_image: reading image from file: {image_path_or_base64}")
+        try:
+            with open(image_path_or_base64, "rb") as f:
+                base64_img = base64.b64encode(f.read()).decode("utf-8")
+        except OSError as e:
+            err_msg = f"Error: Could not read image file '{image_path_or_base64}': {e}"
+            logger.error(err_msg)
+            return err_msg
     else:
-        base64_img = image_path_or_base64
+        # Validate it looks like a real base64 string (not a truncated display artifact)
+        candidate = image_path_or_base64.strip()
+        if not candidate or "truncated" in candidate.lower() or len(candidate) < 100:
+            err_msg = (
+                f"Error: 'image_path_or_base64' does not point to an existing file and does not "
+                f"look like valid base64 data (length={len(candidate)}). "
+                f"Pass the 'file_path' returned by search_visual_knowledge_base instead."
+            )
+            logger.error(err_msg)
+            return err_msg
+        logger.info("analyze_image: using raw base64 string as image input.")
+        base64_img = candidate
 
     headers = {
         "Content-Type": "application/json"
@@ -419,12 +444,46 @@ def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     try:
         response = requests.post(endpoint, headers=headers, json=payload, timeout=60, verify=False)
         response.raise_for_status()
-        result = response.json()
-        return result["choices"][0]["message"]["content"]
+    except requests.exceptions.HTTPError as e:
+        err_msg = (
+            f"API HTTP Error {e.response.status_code} from FM Gateway.\n"
+            f"Endpoint: {endpoint}\nModel: {model_name}\nResponse Body: {e.response.text}"
+        )
+        logger.error(err_msg)
+        return err_msg
+    except requests.exceptions.ConnectionError as e:
+        err_msg = f"Connection Error — could not reach FM Gateway at {endpoint}: {e}"
+        logger.error(err_msg)
+        return err_msg
+    except requests.exceptions.Timeout:
+        err_msg = f"Timeout Error — FM Gateway at {endpoint} did not respond within 60s."
+        logger.error(err_msg)
+        return err_msg
     except requests.exceptions.RequestException as e:
-        err_msg = f"API Error: {e}"
-        if getattr(e, 'response', None) is not None:
-            err_msg += f"\nResponse Body: {e.response.text}"
+        err_msg = f"Request Error calling FM Gateway: {e}"
+        logger.error(err_msg)
+        return err_msg
+
+    # Parse the JSON response — gateway may return a non-JSON body on some errors
+    try:
+        result = response.json()
+    except Exception as e:
+        err_msg = (
+            f"Error: FM Gateway returned non-JSON response (status {response.status_code}).\n"
+            f"Raw body: {response.text[:500]}"
+        )
+        logger.error(err_msg)
+        return err_msg
+
+    # Extract content — guard against unexpected response shapes
+    try:
+        return result["choices"][0]["message"]["content"]
+    except (KeyError, IndexError, TypeError) as e:
+        err_msg = (
+            f"Error: Unexpected response structure from FM Gateway: {e}\n"
+            f"Full response: {result}"
+        )
+        logger.error(err_msg)
         return err_msg
 
 

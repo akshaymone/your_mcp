@@ -26,3 +26,10 @@
 
 - Fixed SSL verification error in `analyze_image`: internal FM Gateway (`fmgateway.proxem.dsone.3ds.com`) uses a self-signed/internal CA certificate. Added `verify=False` to `requests.post()` and suppressed `urllib3.InsecureRequestWarning` to prevent SSL handshake failures when calling the Vision LLM.
 
+
+## [2026-09-04]
+- **Bug Fix — Broken analyze_image pipeline (truncated base64):** `search_visual_knowledge_base` was returning `image_base64` truncated to 100 chars + `"...(truncated for display)"` for context efficiency. However, the agent was then passing this corrupted string directly to `analyze_image`, which caused the VLM to receive invalid image data. Fixed by replacing `image_base64` in search results with `file_path` (the on-disk JPEG path written during ingestion) and renaming the truncated field to `image_base64_preview` to make its display-only intent explicit. `analyze_image` already handles local file paths via `os.path.exists()`, so this requires no changes to the VLM call. Updated `search_visual_knowledge_base` docstring to instruct the agent to use `file_path`, not `image_base64_preview`.
+
+- **Bug Fix — 404 from FM Gateway (wrong endpoint URL):** `analyze_image` was constructing the OpenAI-compatible endpoint with flawed logic that only handled the case where `FM_GATEWAY_URL` already ended in `/v1`. If the base URL was set to `https://fmgateway.proxem.dsone.3ds.com` (no `/v1`), the constructed endpoint became `.../chat/completions` (missing the `/v1` segment), resulting in a 404. Fixed by always stripping trailing slashes and any existing `/v1`, then always appending `/v1/chat/completions`. This makes the URL normalization deterministic regardless of how `FM_GATEWAY_URL` is set in `.env`.
+
+- **Bug Fix — No server-side error logging for gateway failures:** 4xx/5xx errors from the FM Gateway were only returned as strings to the agent — `logger.error` was never called. Added explicit `logger.error()` calls in both `HTTPError` and generic `RequestException` handlers in `analyze_image`, including the resolved endpoint and model name for easy debugging. This is why the server log showed nothing on 404.
