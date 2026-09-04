@@ -357,6 +357,94 @@ def search_visual_knowledge_base(query: str = "", collection_name: str = "vision
 
 
 @mcp.tool()
+def get_file_info(file_path: str) -> str:
+    """
+    Returns basic metadata about any file on disk without ingesting it.
+
+    Use this when the user asks things like:
+      - "can you access this file path?"
+      - "what is this file?"
+      - "what's the file size / format / author of <path>?"
+      - "how many pages does this PDF have?"
+
+    Args:
+        file_path: Absolute path to any file (PDF, PPTX, DOCX, etc.).
+
+    Returns:
+        A JSON string with file metadata: name, size, extension, dates,
+        and for PDFs: page count, title, author, subject from PDF metadata.
+    """
+    import os
+    import json
+    from pathlib import Path
+    from datetime import datetime
+
+    path = Path(file_path.strip().strip('"').strip("'"))
+
+    if not path.exists():
+        return json.dumps({"error": f"File not found: {file_path}"})
+    if not path.is_file():
+        return json.dumps({"error": f"Path is not a file: {file_path}"})
+
+    stat = path.stat()
+    info = {
+        "file_name":   path.name,
+        "extension":   path.suffix.lower(),
+        "size_bytes":  stat.st_size,
+        "size_kb":     round(stat.st_size / 1024, 2),
+        "size_mb":     round(stat.st_size / (1024 * 1024), 3),
+        "created":     datetime.fromtimestamp(stat.st_ctime).isoformat(),
+        "modified":    datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        "full_path":   str(path.resolve()),
+    }
+
+    # PDF-specific metadata
+    if path.suffix.lower() == ".pdf":
+        try:
+            import pypdf
+            reader = pypdf.PdfReader(str(path))
+            meta = reader.metadata or {}
+            info["pdf_pages"]   = len(reader.pages)
+            info["pdf_title"]   = meta.get("/Title", "")
+            info["pdf_author"]  = meta.get("/Author", "")
+            info["pdf_subject"] = meta.get("/Subject", "")
+            info["pdf_creator"] = meta.get("/Creator", "")
+        except ImportError:
+            info["pdf_note"] = "pypdf not installed; PDF metadata unavailable."
+        except Exception as e:
+            info["pdf_note"] = f"Could not read PDF metadata: {e}"
+
+    # PPTX-specific metadata
+    elif path.suffix.lower() == ".pptx":
+        try:
+            from pptx import Presentation
+            prs = Presentation(str(path))
+            core = prs.core_properties
+            info["pptx_slides"]   = len(prs.slides)
+            info["pptx_title"]    = core.title or ""
+            info["pptx_author"]   = core.author or ""
+            info["pptx_subject"]  = core.subject or ""
+            info["pptx_modified"] = core.modified.isoformat() if core.modified else ""
+        except Exception as e:
+            info["pptx_note"] = f"Could not read PPTX metadata: {e}"
+
+    # DOCX-specific metadata
+    elif path.suffix.lower() == ".docx":
+        try:
+            import docx
+            doc = docx.Document(str(path))
+            core = doc.core_properties
+            info["docx_title"]    = core.title or ""
+            info["docx_author"]   = core.author or ""
+            info["docx_subject"]  = core.subject or ""
+            info["docx_modified"] = core.modified.isoformat() if core.modified else ""
+        except Exception as e:
+            info["docx_note"] = f"Could not read DOCX metadata: {e}"
+
+    return json.dumps(info, ensure_ascii=False, indent=2)
+
+
+@mcp.tool()
 def analyze_image(image_path_or_base64: str, prompt: str) -> str:
     """
     Passes an image (either an absolute path or a base64 string) and a text prompt to the Vision LLM to extract data.
